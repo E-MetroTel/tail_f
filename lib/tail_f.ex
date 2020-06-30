@@ -36,6 +36,7 @@ defmodule TailF do
     fd: pid | nil,
     handler: pid | {atom, atom} | {atom, atom, list} | (any -> no_return) | nil,
     loc: integer,
+    mode: :line | :binary,
     path: binary | nil,
     poll_ms: integer | nil,
     poll_timer_ref: reference | nil,
@@ -46,6 +47,7 @@ defmodule TailF do
             fd: nil,
             handler: nil,
             loc: 0,
+            mode: :line,
             path: nil,
             poll_ms: nil,
             poll_timer_ref: nil,
@@ -62,6 +64,7 @@ defmodule TailF do
   def init(args) do
     fname = args[:path]
     monitor = Keyword.get(args, :fs_monitor, true)
+    mode = args[:mode] || :binary
 
     Logger.info("Starting TailF for file: #{inspect fname}")
     Logger.debug(fn -> "args: " <> inspect(args) end)
@@ -70,7 +73,7 @@ defmodule TailF do
 
     Process.send_after(self(), :initialize, args[:init_delay] || 100)
 
-    {:ok, start_fs_monitor(%__MODULE__{fd: fd, path: fname, poll_ms: args[:poll_ms], handler: args[:handler]}, monitor)}
+    {:ok, start_fs_monitor(%__MODULE__{mode: mode, fd: fd, path: fname, poll_ms: args[:poll_ms], handler: args[:handler]}, monitor)}
   end
 
   def handle_info(:initialize, state) do
@@ -119,7 +122,7 @@ defmodule TailF do
         if buffer == "" do
           state
         else
-          process_content(%{state | buffer: ""}, buffer)
+          process_content(%{state | buffer: ""}, format_content(state, buffer))
         end
     end
   end
@@ -187,6 +190,14 @@ defmodule TailF do
 
   defp noreply(%{} = state) do
     {:noreply, state}
+  end
+
+  defp format_content(%{mode: :line}, content) when is_binary(content) do
+    String.split(content, "\n")
+  end
+
+  defp format_content(_, content) do
+    content
   end
 
   defp debug, do: Application.get_env(:tail_f, :debug)
